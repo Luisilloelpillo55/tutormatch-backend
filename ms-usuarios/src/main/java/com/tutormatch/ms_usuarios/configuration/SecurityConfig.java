@@ -8,6 +8,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.http.HttpMethod;
 
 @Configuration
 @EnableWebSecurity
@@ -20,7 +21,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable()) // Desactivado para APIs REST
                 .authorizeHttpRequests(auth -> auth
                         // Dejamos pasar el endpoint de registro sin pedir JWT
-                        .requestMatchers("/api/usuarios/registro").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/usuarios/registro").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));

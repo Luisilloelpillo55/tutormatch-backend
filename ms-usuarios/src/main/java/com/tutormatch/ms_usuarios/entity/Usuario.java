@@ -1,15 +1,15 @@
-package com.tutormatch.auth.entity;
+package com.tutormatch.ms_usuarios.entity;
 
 import jakarta.persistence.*;
-
+import lombok.Data;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
-import lombok.Data;
 
 @Entity
 @Data
-@Table(name = "usuarios", schema = "schema_usuarios")
+@Table(name = "usuarios")
 public class Usuario {
 
     @Id
@@ -34,6 +34,6 @@ public class Usuario {
     private String estadoSolicitud;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "usuario_roles", schema = "schema_usuarios", joinColumns = @JoinColumn(name = "usuario_id"), inverseJoinColumns = @JoinColumn(name = "rol_id"))
-    private Set<Rol> roles;
+    @JoinTable(name = "usuario_roles", joinColumns = @JoinColumn(name = "usuario_id"), inverseJoinColumns = @JoinColumn(name = "rol_id"))
+    private Set<Rol> roles = new HashSet<>();
 }

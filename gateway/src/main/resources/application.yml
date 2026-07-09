@@ -17,30 +17,30 @@ spring:
       server:
         webmvc:
           routes:
-            routes:
-              # Microservicio de Usuarios
-              - id: ms-usuarios
-                uri: lb://ms-usuarios
-                predicates:
-                  - Path=/api/usuarios/**
-                filters:
-                  - StripPrefix=0
+            # Microservicio de Usuarios
+            - id: ms-usuarios
+              uri: lb://ms-usuarios
+              predicates:
+                - Path=/api/usuarios/**
+              filters:
+                - StripPrefix=0
 
-              # Microservicio Core (Tutorías e Inscripciones)
-              - id: ms-core
-                uri: lb://ms-core
-                predicates:
-                  - Path=/api/core/**
-                filters:
-                  - StripPrefix=0
+            # Microservicio Core (Tutorías e Inscripciones)
+            - id: ms-core
+              uri: lb://ms-core
+              predicates:
+                - Path=/api/core/**
+              filters:
+                - StripPrefix=0
 
-              # Microservicio de Evaluaciones
-              - id: ms-evaluaciones
-                uri: lb://ms-evaluaciones
-                predicates:
-                  - Path=/api/evaluaciones/**
-                filters:
-                  - StripPrefix=0
+            # Microservicio de Evaluaciones
+            - id: ms-evaluaciones
+              uri: lb://ms-evaluaciones
+              predicates:
+                - Path=/api/evaluaciones/**
+              filters:
+                - StripPrefix=0
+
 eureka:
   client:
     service-url:
