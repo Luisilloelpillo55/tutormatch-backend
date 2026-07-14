@@ -41,6 +41,14 @@ spring:
               filters:
                 - StripPrefix=0
 
+            # Microservicio de Notificaciones
+            - id: ms-notificaciones
+              uri: lb://ms-notificaciones
+              predicates:
+                - Path=/api/notificaciones/**
+              filters:
+                - StripPrefix=0
+
 eureka:
   client:
     service-url:
