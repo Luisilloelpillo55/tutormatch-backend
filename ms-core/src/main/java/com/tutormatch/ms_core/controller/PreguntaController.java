@@ -68,31 +68,6 @@ public class PreguntaController {
         return ResponseEntity.ok(preguntaService.listarPreguntas(sesionId));
     }
 
-    @PostMapping("/{sesionId}/preguntas/{preguntaId}/respuesta")
-    @PreAuthorize("hasRole('ROLE_TUTOR')")
-    public ResponseEntity<PreguntaResponseDto> responderPregunta(
-            @PathVariable UUID sesionId,
-            @PathVariable UUID preguntaId,
-            @RequestBody RespuestaRequestDto dto,
-            @AuthenticationPrincipal Jwt jwt) {
-
-        UUID tutorId = UUID.fromString(jwt.getSubject());
-        PreguntaResponseDto actualizada = preguntaService.responderPregunta(sesionId, preguntaId, tutorId, dto);
-        return ResponseEntity.ok(actualizada);
-    }
-
-    @DeleteMapping("/{sesionId}/preguntas/{preguntaId}")
-    @PreAuthorize("hasRole('ROLE_ALUMNO')")
-    public ResponseEntity<Void> eliminarPregunta(
-            @PathVariable UUID sesionId,
-            @PathVariable UUID preguntaId,
-            @AuthenticationPrincipal Jwt jwt) {
-
-        UUID alumnoId = UUID.fromString(jwt.getSubject());
-        preguntaService.eliminarPregunta(sesionId, preguntaId, alumnoId);
-        return ResponseEntity.noContent().build();
-    }
-
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleValidationError(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());

@@ -11,9 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.tutormatch.ms_core.client.NotificacionClient;
 import com.tutormatch.ms_core.dto.NotificacionRequestDto;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -22,6 +20,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class InscripcionService {
 
     private static final String INSCRIPCION_CONFIRMADA = "CONFIRMADA";
@@ -46,16 +45,6 @@ public class InscripcionService {
     // HU-14: Inscribirse a una sesión
     // =========================================================================
 
-    /**
-     * Inscribe a un alumno en una sesión.
-     *
-     * Validaciones:
-     * 1. La sesión existe y está ACTIVA.
-     * 2. El alumno no está ya inscrito (no hay duplicado CONFIRMADO).
-     * 3. Todavía hay cupo disponible (> 0).
-     *
-     * Al inscribirse: cupoDisponible -= 1.
-     */
     @Transactional
     public Inscripcion inscribirse(String correoAlumno, InscripcionRequestDto dto, UUID alumnoId) {
 
@@ -95,54 +84,50 @@ public class InscripcionService {
         sesion.setCupoDisponible(sesion.getCupoDisponible() - 1);
         sesionRepository.save(sesion);
 
+        // FIX: guardamos la inscripción ANTES de intentar notificar,
+        // así el registro queda persistido pase lo que pase con el correo.
+        Inscripcion guardada = inscripcionRepository.save(inscripcion);
+
         // =========================================================
-        // DISPARAR NOTIFICACIÓN
+        // DISPARAR NOTIFICACIÓN (best-effort: si falla, no debe tumbar la inscripción)
         // =========================================================
+        try {
+            String fechaFormateada = sesion.getFechaHora().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
 
-        // Formateamos la fecha para que se vea bonita en el correo (Ej. 15/07/2026
-        // 15:30)
-        String fechaFormateada = sesion.getFechaHora().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+            String mensajeHtml = String.format(
+                    "Te has inscrito exitosamente a la tutoría de <strong style='color: #2563eb;'>%s</strong>.<br><br>"
+                            +
+                            "<strong>Detalles de la sesión:</strong><br>" +
+                            "<ul>" +
+                            "<li><strong>Tutor:</strong> %s</li>" +
+                            "<li><strong>Fecha y Hora:</strong> %s</li>" +
+                            "<li><strong>Lugar/Enlace:</strong> %s</li>" +
+                            "</ul><br>" +
+                            "Te sugerimos estar listo 5 minutos antes. ¡Mucho éxito!",
+                    sesion.getTitulo(),
+                    sesion.getTutorNombre(),
+                    fechaFormateada,
+                    sesion.getLugar());
 
-        // Construimos el mensaje HTML
-        String mensajeHtml = String.format(
-                "Te has inscrito exitosamente a la tutoría de <strong style='color: #2563eb;'>%s</strong>.<br><br>" +
-                        "<strong>Detalles de la sesión:</strong><br>" +
-                        "<ul>" +
-                        "<li><strong>Tutor:</strong> %s</li>" +
-                        "<li><strong>Fecha y Hora:</strong> %s</li>" +
-                        "<li><strong>Lugar/Enlace:</strong> %s</li>" +
-                        "</ul><br>" +
-                        "Te sugerimos estar listo 5 minutos antes. ¡Mucho éxito!",
-                sesion.getTitulo(),
-                sesion.getTutorNombre(),
-                fechaFormateada,
-                sesion.getLugar());
+            NotificacionRequestDto notificacion = new NotificacionRequestDto();
+            notificacion.setUsuarioId(alumnoId);
+            notificacion.setCorreoDestino(correoAlumno);
+            notificacion.setTitulo("Inscripción Confirmada: " + sesion.getTitulo());
+            notificacion.setMensaje(mensajeHtml);
 
-        NotificacionRequestDto notificacion = new NotificacionRequestDto();
-        notificacion.setUsuarioId(alumnoId);
-        notificacion.setCorreoDestino(correoAlumno);
-        notificacion.setTitulo("Inscripción Confirmada: " + sesion.getTitulo());
-        notificacion.setMensaje(mensajeHtml);
+            notificacionClient.enviarNotificacion(notificacion);
+        } catch (Exception ex) {
+            log.warn("No se pudo enviar la notificación de inscripción para alumno {} en sesión {}: {}",
+                    alumnoId, dto.getSesionId(), ex.getMessage());
+        }
 
-        // Llamada asíncrona (opcional, para no bloquear la respuesta)
-        // o síncrona directa hacia tu microservicio
-        notificacionClient.enviarNotificacion(notificacion);
-
-        return inscripcionRepository.save(inscripcion);
+        return guardada;
     }
 
     // =========================================================================
     // HU-15: Agenda del Alumno — sesiones futuras inscritas (con lugar revelado)
     // =========================================================================
 
-    /**
-     * Retorna las sesiones futuras a las que el alumno está inscrito (estado
-     * CONFIRMADA).
-     * A diferencia del catálogo, el DTO de respuesta SÍ incluye el campo "lugar".
-     * Las sesiones se ordenan cronológicamente (la más próxima primero).
-     *
-     * @param alumnoId UUID del alumno extraído del JWT
-     */
     public List<AgendaAlumnoDto> getAgendaAlumno(UUID alumnoId) {
         List<Inscripcion> inscripciones = inscripcionRepository
                 .findByAlumnoIdAndEstado(alumnoId, INSCRIPCION_CONFIRMADA);
@@ -192,18 +177,6 @@ public class InscripcionService {
     // HU-16: Cancelar inscripción
     // =========================================================================
 
-    /**
-     * Cancela la inscripción del alumno en una sesión.
-     *
-     * Al cancelar:
-     * - El estado de la inscripción pasa a CANCELADA.
-     * - El cupoDisponible de la sesión se incrementa en 1.
-     * - La sesión vuelve a aparecer en el catálogo (si aún está activa y es
-     * futura).
-     *
-     * @param inscripcionId ID de la inscripción a cancelar
-     * @param alumnoId      UUID del alumno autenticado (del JWT)
-     */
     @Transactional
     public void cancelarInscripcion(String correoAlumno, UUID inscripcionId, UUID alumnoId) {
 
@@ -222,44 +195,47 @@ public class InscripcionService {
             throw new IllegalArgumentException("Esta inscripción ya está cancelada.");
         }
 
-        // =========================================================
-        // DISPARAR NOTIFICACIÓN
-        // =========================================================
-
-        String fechaFormateada = sesion.getFechaHora().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
-
-        // Mensaje con formato rojo para cancelación
-        String mensajeHtml = String.format(
-                "Te confirmamos que se ha <strong style='color: #ef4444;'>CANCELADO</strong> tu inscripción a la tutoría de <strong>%s</strong>.<br><br>"
-                        +
-                        "<strong>Detalles de la sesión cancelada:</strong><br>" +
-                        "<ul>" +
-                        "<li><strong>Tutor:</strong> %s</li>" +
-                        "<li><strong>Fecha y Hora:</strong> %s</li>" +
-                        "<li><strong>Lugar/Enlace:</strong> %s</li>" +
-                        "</ul><br>" +
-                        "Ese espacio ha sido liberado para otro compañero. ¡Puedes buscar nuevos horarios en el catálogo cuando lo desees!",
-                sesion.getTitulo(),
-                sesion.getTutorNombre(),
-                fechaFormateada,
-                sesion.getLugar());
-
-        NotificacionRequestDto notificacion = new NotificacionRequestDto();
-        notificacion.setUsuarioId(alumnoId);
-        notificacion.setCorreoDestino(correoAlumno);
-        notificacion.setTitulo("Inscripción Cancelada: " + sesion.getTitulo());
-        notificacion.setMensaje(mensajeHtml);
-
-        notificacionClient.enviarNotificacion(notificacion);
-
         // Cambiar estado de la inscripción
         inscripcion.setEstado(INSCRIPCION_CANCELADA);
         inscripcionRepository.save(inscripcion);
 
         // Incrementar cupo de la sesión
-        if (sesion != null && SESION_ACTIVA.equals(sesion.getEstado())) {
+        if (SESION_ACTIVA.equals(sesion.getEstado())) {
             sesion.setCupoDisponible(sesion.getCupoDisponible() + 1);
             sesionRepository.save(sesion);
+        }
+
+        // =========================================================
+        // DISPARAR NOTIFICACIÓN (best-effort: si falla, no debe tumbar la cancelación)
+        // =========================================================
+        try {
+            String fechaFormateada = sesion.getFechaHora().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+
+            String mensajeHtml = String.format(
+                    "Te confirmamos que se ha <strong style='color: #ef4444;'>CANCELADO</strong> tu inscripción a la tutoría de <strong>%s</strong>.<br><br>"
+                            +
+                            "<strong>Detalles de la sesión cancelada:</strong><br>" +
+                            "<ul>" +
+                            "<li><strong>Tutor:</strong> %s</li>" +
+                            "<li><strong>Fecha y Hora:</strong> %s</li>" +
+                            "<li><strong>Lugar/Enlace:</strong> %s</li>" +
+                            "</ul><br>" +
+                            "Ese espacio ha sido liberado para otro compañero. ¡Puedes buscar nuevos horarios en el catálogo cuando lo desees!",
+                    sesion.getTitulo(),
+                    sesion.getTutorNombre(),
+                    fechaFormateada,
+                    sesion.getLugar());
+
+            NotificacionRequestDto notificacion = new NotificacionRequestDto();
+            notificacion.setUsuarioId(alumnoId);
+            notificacion.setCorreoDestino(correoAlumno);
+            notificacion.setTitulo("Inscripción Cancelada: " + sesion.getTitulo());
+            notificacion.setMensaje(mensajeHtml);
+
+            notificacionClient.enviarNotificacion(notificacion);
+        } catch (Exception ex) {
+            log.warn("No se pudo enviar la notificación de cancelación para alumno {} en inscripción {}: {}",
+                    alumnoId, inscripcionId, ex.getMessage());
         }
     }
 }
