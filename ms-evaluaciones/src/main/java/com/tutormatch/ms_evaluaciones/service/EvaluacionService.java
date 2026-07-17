@@ -49,4 +49,23 @@ public class EvaluacionService {
         Double promedio = evaluacionRepository.obtenerPromedioPorTutorId(tutorId);
         return promedio != null ? Math.round(promedio * 10.0) / 10.0 : 0.0;
     }
+
+    @Transactional(readOnly = true)
+    public java.util.Map<UUID, Double> obtenerPromediosPorTutorIds(java.util.List<UUID> tutorIds) {
+        if (tutorIds == null || tutorIds.isEmpty()) return java.util.Collections.emptyMap();
+        
+        java.util.List<Object[]> resultados = evaluacionRepository.obtenerPromediosPorTutorIds(tutorIds);
+        java.util.Map<UUID, Double> map = new java.util.HashMap<>();
+        for (Object[] obj : resultados) {
+            UUID id = (UUID) obj[0];
+            Double promedio = (Double) obj[1];
+            map.put(id, promedio != null ? Math.round(promedio * 10.0) / 10.0 : 0.0);
+        }
+        return map;
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<UUID> obtenerSesionesEvaluadasPorAlumno(UUID alumnoId) {
+        return evaluacionRepository.findSesionesEvaluadasPorAlumno(alumnoId);
+    }
 }

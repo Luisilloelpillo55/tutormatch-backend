@@ -1,5 +1,6 @@
 package com.tutormatch.ms_core.service;
 
+import com.tutormatch.ms_core.client.EvaluacionClient;
 import com.tutormatch.ms_core.client.NotificacionClient;
 import com.tutormatch.ms_core.client.UsuarioClient;
 import com.tutormatch.ms_core.dto.*;
@@ -14,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -28,14 +30,16 @@ public class SesionService {
     private final InscripcionRepository inscripcionRepository;
     private final NotificacionClient notificacionClient;
     private final UsuarioClient usuarioClient;
+    private final EvaluacionClient evaluacionClient;
 
     public SesionService(SesionRepository sesionRepository,
             InscripcionRepository inscripcionRepository, NotificacionClient notificacionClient,
-            UsuarioClient usuarioClient) {
+            UsuarioClient usuarioClient, EvaluacionClient evaluacionClient) {
         this.sesionRepository = sesionRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.notificacionClient = notificacionClient;
         this.usuarioClient = usuarioClient;
+        this.evaluacionClient = evaluacionClient;
     }
 
     // =========================================================================
@@ -231,13 +235,14 @@ public class SesionService {
      * @param fecha   Fecha exacta (yyyy-MM-dd) para filtrar
      */
     public List<CatalogoSesionDto> getCatalogo(String materia, String tutor, LocalDate fecha) {
-        // Convertimos LocalDate a String para la native query (evita el bug
-        // lower(bytea))
         String fechaStr = (fecha != null) ? fecha.toString() : null;
-        return sesionRepository
-                .findCatalogo(LocalDateTime.now(), materia, tutor, fechaStr)
-                .stream()
-                .map(this::mapToCatalogoDto)
+        List<Sesion> sesiones = sesionRepository.findCatalogo(LocalDateTime.now(), materia, tutor, fechaStr);
+        
+        List<UUID> tutorIds = sesiones.stream().map(Sesion::getTutorId).distinct().collect(Collectors.toList());
+        Map<UUID, Double> promedios = evaluacionClient.obtenerPromediosLote(tutorIds);
+        
+        return sesiones.stream()
+                .map(s -> mapToCatalogoDto(s, promedios.get(s.getTutorId())))
                 .collect(Collectors.toList());
     }
 
@@ -253,9 +258,14 @@ public class SesionService {
      */
     @Transactional(readOnly = true)
     public List<SesionResponseDto> obtenerHistorial(UUID usuarioId) {
-        return sesionRepository.findHistorialByUsuarioId(usuarioId, LocalDateTime.now())
-            .stream()
-            .map(this::mapToResponseDto)
+        List<Sesion> sesiones = sesionRepository.findHistorialByUsuarioId(usuarioId, LocalDateTime.now());
+        
+        List<UUID> tutorIds = sesiones.stream().map(Sesion::getTutorId).distinct().collect(Collectors.toList());
+        Map<UUID, Double> promedios = evaluacionClient.obtenerPromediosLote(tutorIds);
+        List<UUID> evaluadas = evaluacionClient.obtenerSesionesEvaluadas(usuarioId);
+        
+        return sesiones.stream()
+            .map(s -> mapToResponseDto(s, promedios.get(s.getTutorId()), evaluadas.contains(s.getId())))
             .collect(Collectors.toList());
     }
 
@@ -264,6 +274,10 @@ public class SesionService {
     // =========================================================================
 
     public SesionResponseDto mapToResponseDto(Sesion sesion) {
+        return mapToResponseDto(sesion, null, null);
+    }
+    
+    public SesionResponseDto mapToResponseDto(Sesion sesion, Double promedioTutor, Boolean fueEvaluada) {
         int inscritos = (int) inscripcionRepository
                 .countBySesionIdAndEstado(sesion.getId(), INSCRIPCION_CONFIRMADA);
 
@@ -279,10 +293,12 @@ public class SesionService {
                 sesion.getCupoDisponible(),
                 inscritos,
                 sesion.getEstado(),
-                sesion.getCreadoEn());
+                sesion.getCreadoEn(),
+                fueEvaluada,
+                promedioTutor);
     }
 
-   private CatalogoSesionDto mapToCatalogoDto(Sesion sesion) {
+   private CatalogoSesionDto mapToCatalogoDto(Sesion sesion, Double calificacion) {
         int inscritos = (int) inscripcionRepository
                 .countBySesionIdAndEstado(sesion.getId(), INSCRIPCION_CONFIRMADA);
 
@@ -296,7 +312,7 @@ public class SesionService {
                 sesion.getCupoMaximo(),
                 sesion.getCupoDisponible(),
                 inscritos,
-                null // calificación → null hasta que EP-05 lo implemente
+                calificacion
         );
     }
 

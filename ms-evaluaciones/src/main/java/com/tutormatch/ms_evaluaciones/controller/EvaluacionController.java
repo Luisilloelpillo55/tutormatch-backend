@@ -46,7 +46,17 @@ public class EvaluacionController {
         return ResponseEntity.ok(promedio);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
+    @PostMapping("/promedios-lote")
+    public ResponseEntity<java.util.Map<UUID, Double>> obtenerPromediosLote(@RequestBody java.util.List<UUID> tutorIds) {
+        return ResponseEntity.ok(evaluacionService.obtenerPromediosPorTutorIds(tutorIds));
+    }
+
+    @GetMapping("/alumno/{alumnoId}/evaluadas")
+    public ResponseEntity<java.util.List<UUID>> obtenerSesionesEvaluadas(@PathVariable UUID alumnoId) {
+        return ResponseEntity.ok(evaluacionService.obtenerSesionesEvaluadasPorAlumno(alumnoId));
+    }
+
+             @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleValidationError(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
     }
