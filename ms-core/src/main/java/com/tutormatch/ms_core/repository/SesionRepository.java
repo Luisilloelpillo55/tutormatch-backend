@@ -24,6 +24,11 @@ public interface SesionRepository extends JpaRepository<Sesion, UUID> {
     List<Sesion> findByTutorIdAndEstadoAndFechaHoraAfterOrderByFechaHoraAsc(
             UUID tutorId, String estado, LocalDateTime fecha);
 
+        /**
+         * Historial: sesiones pasadas de un tutor, más recientes primero.
+         */
+        List<Sesion> findByTutorIdAndFechaHoraBeforeOrderByFechaHoraDesc(UUID tutorId, LocalDateTime fecha);
+
     /**
      * HU-13: Catálogo público con filtros opcionales.
      * Usa nativeQuery=true para evitar el bug de Hibernate que traduce
