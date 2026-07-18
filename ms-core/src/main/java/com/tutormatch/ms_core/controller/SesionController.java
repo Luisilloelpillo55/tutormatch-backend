@@ -37,6 +37,16 @@ public class SesionController {
         this.sesionService = sesionService;
     }
 
+    private UUID extraerUsuarioId(Jwt jwt) {
+        try {
+            String userIdStr = jwt.getClaimAsString("usuario_id");
+            if (userIdStr == null) userIdStr = jwt.getSubject();
+            return UUID.fromString(userIdStr);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new IllegalArgumentException("Token inválido: No se puede extraer el ID del usuario.");
+        }
+    }
+
     // -----------------------------------------------------------------------
     // HU-13: GET — Catálogo público (sin autenticación requerida)
     // -----------------------------------------------------------------------
@@ -74,11 +84,17 @@ public class SesionController {
             @RequestBody SesionRequestDto dto,
             @AuthenticationPrincipal Jwt jwt) {
 
-        UUID tutorId = UUID.fromString(jwt.getClaimAsString("usuario_id"));
+        UUID tutorId = extraerUsuarioId(jwt);
         String tutorNombre = jwt.getClaimAsString("nombre");
 
         SesionResponseDto sesionCreada = sesionService.publicarSesion(dto, tutorId, tutorNombre);
         return ResponseEntity.status(HttpStatus.CREATED).body(sesionCreada);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<SesionResponseDto> obtenerSesion(@PathVariable UUID id) {
+        SesionResponseDto sesion = sesionService.obtenerSesion(id);
+        return ResponseEntity.ok(sesion);
     }
 
     // -----------------------------------------------------------------------
@@ -90,7 +106,7 @@ public class SesionController {
     public ResponseEntity<List<SesionResponseDto>> obtenerMiAgenda(
             @AuthenticationPrincipal Jwt jwt) {
 
-        UUID tutorId = UUID.fromString(jwt.getClaimAsString("usuario_id"));
+        UUID tutorId = extraerUsuarioId(jwt);
         return ResponseEntity.ok(sesionService.obtenerAgendaTutor(tutorId));
     }
 
@@ -105,7 +121,7 @@ public class SesionController {
             @RequestBody SesionUpdateDto dto,
             @AuthenticationPrincipal Jwt jwt) {
 
-        UUID tutorId = UUID.fromString(jwt.getClaimAsString("usuario_id"));
+        UUID tutorId = extraerUsuarioId(jwt);
         return ResponseEntity.ok(sesionService.actualizarSesion(id, dto, tutorId));
     }
 
@@ -119,9 +135,34 @@ public class SesionController {
             @PathVariable UUID id,
             @AuthenticationPrincipal Jwt jwt) {
 
-        UUID tutorId = UUID.fromString(jwt.getClaimAsString("usuario_id"));
+        UUID tutorId = extraerUsuarioId(jwt);
         sesionService.cancelarSesion(id, tutorId);
         return ResponseEntity.noContent().build();
+    }
+
+    // -----------------------------------------------------------------------
+    // HU-Historial (Epica 5): GET — Historial de sesiones pasadas del usuario
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /api/core/sesiones-tutorias/historial
+     *
+     * Devuelve el historial de sesiones pasadas del usuario logueado,
+     * ordenadas de más reciente a más antigua.
+     *
+     * Seguridad: Usuarios con rol ROLE_TUTOR o ROLE_ALUMNO pueden llamar este endpoint.
+     * El usuarioId se extrae automáticamente del token JWT (claim "usuario_id").
+     *
+     * @param jwt Token JWT inyectado automáticamente por Spring Security
+     * @return    200 OK con la lista de sesiones pasadas del usuario
+     */
+    @GetMapping("/historial")
+    @PreAuthorize("hasAnyRole('ROLE_TUTOR', 'ROLE_ALUMNO')")
+    public ResponseEntity<List<SesionResponseDto>> obtenerHistorial(
+            @AuthenticationPrincipal Jwt jwt) {
+
+        UUID usuarioId = UUID.fromString(jwt.getClaimAsString("usuario_id"));
+        return ResponseEntity.ok(sesionService.obtenerHistorial(usuarioId));
     }
 
     // -----------------------------------------------------------------------
