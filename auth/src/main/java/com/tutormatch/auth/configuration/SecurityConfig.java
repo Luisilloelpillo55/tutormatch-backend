@@ -16,6 +16,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -41,23 +42,11 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import com.tutormatch.auth.entity.Rol;
-import com.tutormatch.auth.entity.Usuario;
-import com.tutormatch.auth.repository.UsuarioRepository;
 import com.tutormatch.auth.security.UsuarioPrincipal;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-
-    // HU-08: lo usamos en jwtTokenCustomizer para leer los roles ACTUALES de
-    // la BD en cada emisión de token (login o refresh_token), en vez de
-    // confiar en los que tenía el Authentication cacheado desde el login.
-    private final UsuarioRepository usuarioRepository;
-
-    public SecurityConfig(UsuarioRepository usuarioRepository) {
-        this.usuarioRepository = usuarioRepository;
-    }
 
     // Configura la seguridad para los endpoints de OAuth2
     @Bean
@@ -134,26 +123,17 @@ public class SecurityConfig {
             if (principal.getPrincipal() instanceof UsuarioPrincipal usuarioLogueado) {
 
                 // 1. Access Token: Para los Microservicios
-             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-    context.getClaims().subject(usuarioLogueado.getId().toString());
-
-    // HU-08: en un refresh_token, Spring reutiliza el Authentication
-    // cacheado desde el login original, así que principal.getAuthorities()
-    // puede estar desactualizado (ej. si un Admin acaba de aprobarlo como
-    // TUTOR). Por eso volvemos a consultar los roles ACTUALES en la BD
-    // cada vez que se emite un access token, sea login o refresh.
-    Set<String> roles = usuarioRepository.findById(usuarioLogueado.getId())
-            .map(Usuario::getRoles)
-            .orElseGet(Set::of)
-            .stream()
-            .map(Rol::getNombre)
-            .collect(Collectors.toSet());
-
-    context.getClaims().claim("roles", roles);
-    context.getClaims().claim("usuario_id", usuarioLogueado.getId().toString());
-    context.getClaims().claim("nombre", usuarioLogueado.getNombre());
-    context.getClaims().claim("email", usuarioLogueado.getUsername());
-}
+                if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+                    context.getClaims().subject(usuarioLogueado.getId().toString());
+                    
+                    Set<String> roles = principal.getAuthorities().stream()
+                            .map(GrantedAuthority::getAuthority)
+                            .collect(Collectors.toSet());
+                    context.getClaims().claim("roles", roles);
+                    context.getClaims().claim("usuario_id", usuarioLogueado.getId().toString());
+                    context.getClaims().claim("nombre", usuarioLogueado.getNombre());
+                    context.getClaims().claim("email", usuarioLogueado.getUsername());
+                }
 
                 // 2. ID Token: Para el frontend en Angular
                 if (OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
